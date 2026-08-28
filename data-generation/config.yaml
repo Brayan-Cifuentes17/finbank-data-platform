@@ -1,0 +1,39 @@
+seed: 42
+
+periodo:
+  fecha_inicio: "2025-08-27"
+  fecha_fin: "2026-08-27"
+
+volumenes:
+  clientes: 10000
+  productos: 50
+  sucursales: 200
+  obligaciones: 30000
+  movimientos: 500000
+  comisiones: 80000
+
+calidad:
+  pct_nulos: 0.05        
+
+anomalias:
+  pct_duplicados: 0.005        
+  pct_fechas_fuera_rango: 0.003
+  pct_ids_huerfanos: 0.005     
+  pct_montos_invalidos: 0.003  
+
+paises:
+  - {nombre: "Colombia", ciudades: ["Bogotá", "Medellín", "Cali", "Barranquilla"]}
+  - {nombre: "Mexico", ciudades: ["Ciudad de México", "Guadalajara"]}
+  - {nombre: "Peru", ciudades: ["Lima"]}
+  - {nombre: "Chile", ciudades: ["Santiago"]}
+  - {nombre: "Argentina", ciudades: ["Buenos Aires"]}
+
+salida:
+  directorio: "./output"
+  formatos_por_tabla:
+    clientes: "csv"
+    productos: "json"
+    sucursales: "json"
+    obligaciones: "csv"
+    movimientos: "csv"
+    comisiones: "csv"

@@ -1,0 +1,23 @@
+#Terraform
+infra/*.tfstate
+infra/*.tfstate.*
+infra/.terraform/
+infra/.terraform.lock.hcl
+infra/secrets.tfvars
+infra/*.auto.tfvars
+infra/crash.log
+infra/crash.*.log
+
+#Datos generados 
+data-generation/output/
+
+#Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+#Sistema
+.DS_Store
+Thumbs.db
+
