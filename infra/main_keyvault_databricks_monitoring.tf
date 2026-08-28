@@ -36,6 +36,13 @@ resource "azurerm_key_vault_secret" "storage_connection_string" {
   depends_on = [azurerm_key_vault_access_policy.deployer]
 }
 
+resource "azurerm_key_vault_secret" "sql_admin_password" {
+  name         = "sql-admin-password"
+  value        = var.sql_admin_password
+  key_vault_id = azurerm_key_vault.main.id
+
+  depends_on = [azurerm_key_vault_access_policy.deployer]
+}
 
 resource "azurerm_databricks_workspace" "main" {
   name                = "dbw-${local.name_prefix}"
