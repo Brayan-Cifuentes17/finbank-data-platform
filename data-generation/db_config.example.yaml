@@ -1,0 +1,11 @@
+# db_config.example.yaml
+# copiar este archivo como "db_config.yaml" (sin .example) en la misma carpeta,
+# y completar con los valores reales. db_config.yaml esta en .gitignore es decir no se sube.
+# Los valores de server/database se obtienen de los outputs de Terraform
+# (terraform output sql_server_fqdn / sql_database_name)
+
+server: "sql-ejemplo.database.windows.net"
+database: "sqldb-ejemplo-source"
+user: "usuario_ejemplo"
+password: "_PASSWORD_AQUI"  # la misma que se puso en infra/secrets.tfvars
+port: 1433

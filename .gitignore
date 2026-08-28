@@ -10,7 +10,7 @@ infra/crash.*.log
 
 #Datos generados 
 data-generation/output/
-
+data-generation/db_config.yaml
 #Python
 __pycache__/
 *.pyc
