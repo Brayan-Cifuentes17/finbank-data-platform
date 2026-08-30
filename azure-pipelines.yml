@@ -12,8 +12,13 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  terraformVersion: '1.7.0'
-  workingDirectory: '$(System.DefaultWorkingDirectory)/infra'
+  - group: finbank-secrets
+  - name: terraformVersion
+    value: '1.7.0'
+  - name: workingDirectory
+    value: '$(System.DefaultWorkingDirectory)/infra'
+  - name: azureServiceConnection
+    value: 'sc-finbank-azure'
 
 stages:
 
@@ -27,22 +32,21 @@ stages:
           inputs:
             terraformVersion: $(terraformVersion)
 
-        - script: terraform init -backend-config="key=finbank-dev.tfstate"
-          workingDirectory: $(workingDirectory)
-          displayName: 'terraform init'
-
-        - script: |
-            terraform plan \
-              -var-file="dev.tfvars" \
-              -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_DEV)" \
-              -out=tfplan
-          workingDirectory: $(workingDirectory)
-          displayName: 'terraform plan'
-          env:
-            ARM_CLIENT_ID: $(ARM_CLIENT_ID)
-            ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
-            ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
-            ARM_TENANT_ID: $(ARM_TENANT_ID)
+        - task: AzureCLI@2
+          displayName: 'terraform init + plan (via Azure CLI session)'
+          inputs:
+            azureSubscription: $(azureServiceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            addSpnToEnvironment: true
+            inlineScript: |
+              cd $(workingDirectory)
+              export ARM_USE_CLI=true
+              terraform init -backend-config="key=finbank-dev.tfstate"
+              terraform plan \
+                -var-file="dev.tfvars" \
+                -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_DEV)" \
+                -out=tfplan
 
 - stage: DesplegarDev
   displayName: 'Desplegar a DEV'
@@ -51,7 +55,7 @@ stages:
   jobs:
     - deployment: ApplyDev
       displayName: 'terraform apply (dev)'
-      environment: 'finbank-dev'  
+      environment: 'finbank-dev'   
       strategy:
         runOnce:
           deploy:
@@ -59,18 +63,21 @@ stages:
               - task: TerraformInstaller@1
                 inputs:
                   terraformVersion: $(terraformVersion)
-              - script: terraform init -backend-config="key=finbank-dev.tfstate"
-                workingDirectory: $(workingDirectory)
-              - script: |
-                  terraform apply -auto-approve \
-                    -var-file="dev.tfvars" \
-                    -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_DEV)"
-                workingDirectory: $(workingDirectory)
-                env:
-                  ARM_CLIENT_ID: $(ARM_CLIENT_ID)
-                  ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
-                  ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
-                  ARM_TENANT_ID: $(ARM_TENANT_ID)
+
+              - task: AzureCLI@2
+                displayName: 'terraform init + apply (dev)'
+                inputs:
+                  azureSubscription: $(azureServiceConnection)
+                  scriptType: bash
+                  scriptLocation: inlineScript
+                  addSpnToEnvironment: true
+                  inlineScript: |
+                    cd $(workingDirectory)
+                    export ARM_USE_CLI=true
+                    terraform init -backend-config="key=finbank-dev.tfstate"
+                    terraform apply -auto-approve \
+                      -var-file="dev.tfvars" \
+                      -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_DEV)"
 
 - stage: DesplegarPdn
   displayName: 'Desplegar a PDN (requiere aprobacion)'
@@ -87,15 +94,37 @@ stages:
               - task: TerraformInstaller@1
                 inputs:
                   terraformVersion: $(terraformVersion)
-              - script: terraform init -backend-config="key=finbank-pdn.tfstate"
-                workingDirectory: $(workingDirectory)
-              - script: |
-                  terraform apply -auto-approve \
-                    -var-file="pdn.tfvars" \
-                    -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_PDN)"
-                workingDirectory: $(workingDirectory)
-                env:
-                  ARM_CLIENT_ID: $(ARM_CLIENT_ID)
-                  ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
-                  ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
-                  ARM_TENANT_ID: $(ARM_TENANT_ID)
+
+              - task: AzureCLI@2
+                displayName: 'terraform init + apply (pdn)'
+                inputs:
+                  azureSubscription: $(azureServiceConnection)
+                  scriptType: bash
+                  scriptLocation: inlineScript
+                  addSpnToEnvironment: true
+                  inlineScript: |
+                    cd $(workingDirectory)
+                    export ARM_USE_CLI=true
+                    terraform init -backend-config="key=finbank-pdn.tfstate"
+                    terraform apply -auto-approve \
+                      -var-file="pdn.tfvars" \
+                      -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_PDN)"
+              - task: AzureCLI@2
+                displayName: 'Desplegar pipelines de ADF en pdn'
+                inputs:
+                  azureSubscription: $(azureServiceConnection)
+                  scriptType: bash
+                  scriptLocation: inlineScript
+                  inlineScript: |
+                    ADF_NAME_PDN=$(terraform -chdir=$(workingDirectory) output -raw data_factory_name)
+                    RG_PDN=$(terraform -chdir=$(workingDirectory) output -raw resource_group_name)
+
+                    for archivo in $(System.DefaultWorkingDirectory)/orchestration/*.json; do
+                      nombre_pipeline=$(basename "$archivo" .json)
+                      echo "Desplegando pipeline: $nombre_pipeline"
+                      az datafactory pipeline create-or-update \
+                        --factory-name "$ADF_NAME_PDN" \
+                        --resource-group "$RG_PDN" \
+                        --name "$nombre_pipeline" \
+                        --pipeline "@$archivo"
+                    done

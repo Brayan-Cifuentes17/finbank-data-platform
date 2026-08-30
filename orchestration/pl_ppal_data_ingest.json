@@ -1,0 +1,343 @@
+{
+    "name": "pl_ppal_data_ingest",
+    "properties": {
+        "activities": [
+            {
+                "name": "GetControlConfig",
+                "type": "DatabricksNotebook",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "0.00:15:00",
+                    "retry": 3,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "notebookPath": "/Users/brayan.cifuentes1@outlook.com/nb_get_control_config",
+                    "baseParameters": {
+                        "filtro_tabla": {
+                            "value": "@coalesce(pipeline().parameters.filtro_tabla, '')",
+                            "type": "Expression"
+                        }
+                    }
+                },
+                "linkedServiceName": {
+                    "referenceName": "ls_databricks_finbank",
+                    "type": "LinkedServiceReference"
+                }
+            },
+            {
+                "name": "ForEach1",
+                "type": "ForEach",
+                "dependsOn": [
+                    {
+                        "activity": "GetControlConfig",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('GetControlConfig').output.runOutput",
+                        "type": "Expression"
+                    },
+                    "isSequential": true,
+                    "activities": [
+                        {
+                            "name": "copy_to_bronze",
+                            "type": "Copy",
+                            "dependsOn": [],
+                            "policy": {
+                                "timeout": "0.01:00:00",
+                                "retry": 3,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "source": {
+                                    "type": "AzureSqlSource",
+                                    "additionalColumns": [
+                                        {
+                                            "name": "ingestion_timestamp",
+                                            "value": {
+                                                "value": "@utcNow()",
+                                                "type": "Expression"
+                                            }
+                                        },
+                                        {
+                                            "name": "source_system",
+                                            "value": "AzureSQL_finBank"
+                                        },
+                                        {
+                                            "name": "batch_id",
+                                            "value": {
+                                                "value": "@pipeline().RunId",
+                                                "type": "Expression"
+                                            }
+                                        }
+                                    ],
+                                    "sqlReaderQuery": {
+                                        "value": "@if(or(or(pipeline().parameters.run_full_load, empty(item().columna_control)), empty(item().checkpoint_date)), concat('SELECT * FROM ', item().nombre_tabla), concat('SELECT * FROM ', item().nombre_tabla, ' WHERE ', item().columna_control, ' >= ''', item().checkpoint_date, ''''))",
+                                        "type": "Expression"
+                                    },
+                                    "queryTimeout": "02:00:00",
+                                    "partitionOption": "None"
+                                },
+                                "sink": {
+                                    "type": "ParquetSink",
+                                    "storeSettings": {
+                                        "type": "AzureBlobFSWriteSettings"
+                                    },
+                                    "formatSettings": {
+                                        "type": "ParquetWriteSettings"
+                                    }
+                                },
+                                "enableStaging": false,
+                                "translator": {
+                                    "type": "TabularTranslator",
+                                    "typeConversion": true,
+                                    "typeConversionSettings": {
+                                        "allowDataTruncation": true,
+                                        "treatBooleanAsNumber": false
+                                    }
+                                }
+                            },
+                            "inputs": [
+                                {
+                                    "referenceName": "ds_sql_sorce",
+                                    "type": "DatasetReference",
+                                    "parameters": {
+                                        "table_name": {
+                                            "value": "@item().nombre_tabla",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "referenceName": "ds_adls_bronze",
+                                    "type": "DatasetReference",
+                                    "parameters": {
+                                        "table_name": {
+                                            "value": "@item().nombre_tabla",
+                                            "type": "Expression"
+                                        },
+                                        "year": {
+                                            "value": "@formatDateTime(utcnow(),'yyyy')",
+                                            "type": "Expression"
+                                        },
+                                        "month": {
+                                            "value": "@formatDateTime(utcnow(),'MM')",
+                                            "type": "Expression"
+                                        },
+                                        "day": {
+                                            "value": "@formatDateTime(utcnow(),'dd')",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "name": "UpdateCheckpointAndLog",
+                            "type": "DatabricksNotebook",
+                            "dependsOn": [
+                                {
+                                    "activity": "copy_to_bronze",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            ],
+                            "policy": {
+                                "timeout": "0.00:20:00",
+                                "retry": 3,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "notebookPath": "/Users/brayan.cifuentes1@outlook.com/nb_update_checkpoint_and_log",
+                                "baseParameters": {
+                                    "table_name": {
+                                        "value": "@item().nombre_tabla",
+                                        "type": "Expression"
+                                    },
+                                    "tipo_carga": {
+                                        "value": "@item().tipo_carga_default",
+                                        "type": "Expression"
+                                    },
+                                    "columna_control": {
+                                        "value": "@coalesce(item().columna_control, '')",
+                                        "type": "Expression"
+                                    },
+                                    "rows_copied": {
+                                        "value": "@string(activity('copy_to_bronze').output.rowsCopied)",
+                                        "type": "Expression"
+                                    },
+                                    "duration": {
+                                        "value": "@string(activity('copy_to_bronze').output.copyDuration)",
+                                        "type": "Expression"
+                                    },
+                                    "run_id": {
+                                        "value": "@pipeline().RunId",
+                                        "type": "Expression"
+                                    },
+                                    "year": {
+                                        "value": "@formatDateTime(utcnow(),'yyyy')",
+                                        "type": "Expression"
+                                    },
+                                    "month": {
+                                        "value": "@formatDateTime(utcnow(),'MM')",
+                                        "type": "Expression"
+                                    },
+                                    "day": {
+                                        "value": "@formatDateTime(utcnow(),'dd')",
+                                        "type": "Expression"
+                                    },
+                                    "data_written": {
+                                        "value": "@string(activity('copy_to_bronze').output.dataWritten)",
+                                        "type": "Expression"
+                                    }
+                                }
+                            },
+                            "linkedServiceName": {
+                                "referenceName": "ls_databricks_finbank",
+                                "type": "LinkedServiceReference"
+                            }
+                        },
+                        {
+                            "name": "LogAndAlert_CopyFailed",
+                            "type": "DatabricksNotebook",
+                            "dependsOn": [
+                                {
+                                    "activity": "copy_to_bronze",
+                                    "dependencyConditions": [
+                                        "Failed"
+                                    ]
+                                }
+                            ],
+                            "policy": {
+                                "timeout": "0.02:00:00",
+                                "retry": 1,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "notebookPath": "/Users/brayan.cifuentes1@outlook.com/nb_log_pipeline_error",
+                                "baseParameters": {
+                                    "pipeline_name": {
+                                        "value": "@pipeline().Pipeline",
+                                        "type": "Expression"
+                                    },
+                                    "activity_name": {
+                                        "value": "copy_to_bronze",
+                                        "type": "Expression"
+                                    },
+                                    "table_name": {
+                                        "value": "@item().nombre_tabla",
+                                        "type": "Expression"
+                                    },
+                                    "error_message": {
+                                        "value": "@string(activity('copy_to_bronze').Error.Message)",
+                                        "type": "Expression"
+                                    },
+                                    "failure_time": {
+                                        "value": "@utcNow()",
+                                        "type": "Expression"
+                                    },
+                                    "run_id": {
+                                        "value": "@pipeline().RunId",
+                                        "type": "Expression"
+                                    }
+                                }
+                            },
+                            "linkedServiceName": {
+                                "referenceName": "ls_databricks_finbank",
+                                "type": "LinkedServiceReference"
+                            }
+                        },
+                        {
+                            "name": "LogAndAlert_CheckpointFailed",
+                            "type": "DatabricksNotebook",
+                            "dependsOn": [
+                                {
+                                    "activity": "UpdateCheckpointAndLog",
+                                    "dependencyConditions": [
+                                        "Failed"
+                                    ]
+                                }
+                            ],
+                            "policy": {
+                                "timeout": "0.02:00:00",
+                                "retry": 1,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "notebookPath": "/Users/brayan.cifuentes1@outlook.com/nb_log_pipeline_error",
+                                "baseParameters": {
+                                    "pipeline_name": {
+                                        "value": "@pipeline().Pipeline",
+                                        "type": "Expression"
+                                    },
+                                    "activity_name": {
+                                        "value": "UpdateCheckpointAndLog",
+                                        "type": "Expression"
+                                    },
+                                    "table_name": {
+                                        "value": "@item().nombre_tabla",
+                                        "type": "Expression"
+                                    },
+                                    "error_message": {
+                                        "value": "@string(activity('UpdateCheckpointAndLog').Error.Message)",
+                                        "type": "Expression"
+                                    },
+                                    "failure_time": {
+                                        "value": "@utcNow()",
+                                        "type": "Expression"
+                                    },
+                                    "run_id": {
+                                        "value": "@pipeline().RunId",
+                                        "type": "Expression"
+                                    }
+                                }
+                            },
+                            "linkedServiceName": {
+                                "referenceName": "ls_databricks_finbank",
+                                "type": "LinkedServiceReference"
+                            }
+                        }
+                    ]
+                }
+            }
+        ],
+        "parameters": {
+            "run_full_load": {
+                "type": "bool",
+                "defaultValue": false
+            },
+            "filtro_tabla": {
+                "type": "string"
+            }
+        },
+        "folder": {
+            "name": "principal"
+        },
+        "annotations": [],
+        "lastPublishTime": "2026-08-30T07:08:30Z"
+    },
+    "type": "Microsoft.DataFactory/factories/pipelines"
+}

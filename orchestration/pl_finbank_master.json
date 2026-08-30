@@ -1,0 +1,178 @@
+{
+    "name": "pl_finbank_master",
+    "properties": {
+        "activities": [
+            {
+                "name": "Execute bronze",
+                "type": "ExecutePipeline",
+                "dependsOn": [],
+                "policy": {
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "pipeline": {
+                        "referenceName": "pl_ppal_data_ingest",
+                        "type": "PipelineReference"
+                    },
+                    "waitOnCompletion": true,
+                    "parameters": {
+                        "filtro_tabla": {
+                            "value": "@coalesce(pipeline().parameters.filtro_tabla, '')",
+                            "type": "Expression"
+                        },
+                        "run_full_load": {
+                            "value": "@pipeline().parameters.run_full_load",
+                            "type": "Expression"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "bronze_to_silver",
+                "type": "DatabricksNotebook",
+                "dependsOn": [
+                    {
+                        "activity": "Execute bronze",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.01:00:00",
+                    "retry": 3,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "notebookPath": "/Workspace/Users/brayan.cifuentes1@outlook.com/nb_bronze_to_silver",
+                    "baseParameters": {
+                        "filtro_tabla": {
+                            "value": "@coalesce(pipeline().parameters.filtro_tabla, '')",
+                            "type": "Expression"
+                        },
+                        "run_id": {
+                            "value": "@pipeline().RunId",
+                            "type": "Expression"
+                        }
+                    }
+                },
+                "linkedServiceName": {
+                    "referenceName": "ls_databricks_finbank",
+                    "type": "LinkedServiceReference"
+                }
+            },
+            {
+                "name": "silver_to_gold",
+                "type": "DatabricksNotebook",
+                "dependsOn": [
+                    {
+                        "activity": "bronze_to_silver",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.01:00:00",
+                    "retry": 3,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "notebookPath": "/Workspace/Users/brayan.cifuentes1@outlook.com/nb_silver_to_gold",
+                    "baseParameters": {
+                        "filtro_tabla": {
+                            "value": "@coalesce(pipeline().parameters.filtro_tabla, '')",
+                            "type": "Expression"
+                        }
+                    }
+                },
+                "linkedServiceName": {
+                    "referenceName": "ls_databricks_finbank",
+                    "type": "LinkedServiceReference"
+                }
+            },
+            {
+                "name": "data_quality",
+                "type": "DatabricksNotebook",
+                "dependsOn": [
+                    {
+                        "activity": "silver_to_gold",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.00:30:00",
+                    "retry": 3,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "notebookPath": "/Workspace/Users/brayan.cifuentes1@outlook.com/nb_data_quality"
+                },
+                "linkedServiceName": {
+                    "referenceName": "ls_databricks_finbank",
+                    "type": "LinkedServiceReference"
+                }
+            },
+            {
+                "name": "ReporteDiario",
+                "type": "DatabricksNotebook",
+                "dependsOn": [
+                    {
+                        "activity": "data_quality",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.00:20:00",
+                    "retry": 1,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "notebookPath": "/Workspace/Users/brayan.cifuentes1@outlook.com/nb_reporte_diario",
+                    "baseParameters": {
+                        "run_id": {
+                            "value": "@pipeline().RunId",
+                            "type": "Expression"
+                        }
+                    }
+                },
+                "linkedServiceName": {
+                    "referenceName": "ls_databricks_finbank",
+                    "type": "LinkedServiceReference"
+                }
+            }
+        ],
+        "parameters": {
+            "filtro_tabla": {
+                "type": "string"
+            },
+            "run_full_load": {
+                "type": "bool",
+                "defaultValue": false
+            }
+        },
+        "folder": {
+            "name": "principal"
+        },
+        "annotations": [],
+        "lastPublishTime": "2026-08-30T07:08:31Z"
+    },
+    "type": "Microsoft.DataFactory/factories/pipelines"
+}
