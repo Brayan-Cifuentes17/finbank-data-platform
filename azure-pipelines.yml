@@ -1,0 +1,101 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  terraformVersion: '1.7.0'
+  workingDirectory: '$(System.DefaultWorkingDirectory)/infra'
+
+stages:
+
+- stage: Validar
+  displayName: 'Validar cambios (terraform plan sobre dev)'
+  jobs:
+    - job: PlanDev
+      displayName: 'terraform plan -var-file=dev.tfvars'
+      steps:
+        - task: TerraformInstaller@1
+          inputs:
+            terraformVersion: $(terraformVersion)
+
+        - script: terraform init -backend-config="key=finbank-dev.tfstate"
+          workingDirectory: $(workingDirectory)
+          displayName: 'terraform init'
+
+        - script: |
+            terraform plan \
+              -var-file="dev.tfvars" \
+              -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_DEV)" \
+              -out=tfplan
+          workingDirectory: $(workingDirectory)
+          displayName: 'terraform plan'
+          env:
+            ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+            ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+            ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+            ARM_TENANT_ID: $(ARM_TENANT_ID)
+
+- stage: DesplegarDev
+  displayName: 'Desplegar a DEV'
+  dependsOn: Validar
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+    - deployment: ApplyDev
+      displayName: 'terraform apply (dev)'
+      environment: 'finbank-dev'  
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - task: TerraformInstaller@1
+                inputs:
+                  terraformVersion: $(terraformVersion)
+              - script: terraform init -backend-config="key=finbank-dev.tfstate"
+                workingDirectory: $(workingDirectory)
+              - script: |
+                  terraform apply -auto-approve \
+                    -var-file="dev.tfvars" \
+                    -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_DEV)"
+                workingDirectory: $(workingDirectory)
+                env:
+                  ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+                  ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+                  ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+                  ARM_TENANT_ID: $(ARM_TENANT_ID)
+
+- stage: DesplegarPdn
+  displayName: 'Desplegar a PDN (requiere aprobacion)'
+  dependsOn: DesplegarDev
+  condition: succeeded()
+  jobs:
+    - deployment: ApplyPdn
+      displayName: 'terraform apply (pdn)'
+      environment: 'finbank-pdn'   
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - task: TerraformInstaller@1
+                inputs:
+                  terraformVersion: $(terraformVersion)
+              - script: terraform init -backend-config="key=finbank-pdn.tfstate"
+                workingDirectory: $(workingDirectory)
+              - script: |
+                  terraform apply -auto-approve \
+                    -var-file="pdn.tfvars" \
+                    -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_PDN)"
+                workingDirectory: $(workingDirectory)
+                env:
+                  ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+                  ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+                  ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+                  ARM_TENANT_ID: $(ARM_TENANT_ID)
