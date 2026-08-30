@@ -21,7 +21,6 @@ variables:
     value: 'sc-finbank-manual'
 
 stages:
-
 - stage: Validar
   displayName: 'validar terraform plan sobre dev'
   jobs:
@@ -66,6 +65,7 @@ stages:
         runOnce:
           deploy:
             steps:
+              - checkout: self
               - script: |
                   curl -sL https://releases.hashicorp.com/terraform/$(terraformVersion)/terraform_$(terraformVersion)_linux_amd64.zip -o terraform.zip
                   unzip -o terraform.zip
@@ -103,6 +103,7 @@ stages:
         runOnce:
           deploy:
             steps:
+              - checkout: self
               - script: |
                   curl -sL https://releases.hashicorp.com/terraform/$(terraformVersion)/terraform_$(terraformVersion)_linux_amd64.zip -o terraform.zip
                   unzip -o terraform.zip
