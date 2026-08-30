@@ -45,6 +45,7 @@ variable "sql_admin_password" {
 variable "client_ip_address" {
   description = "IP para la regla de firewall de Azure SQL "
   type        = string
+  default     = ""
 }
 
 variable "databricks_sku" {

@@ -29,6 +29,7 @@ resource "azurerm_mssql_firewall_rule" "allow_azure_services" {
 }
 
 resource "azurerm_mssql_firewall_rule" "allow_client_ip" {
+  count            = var.client_ip_address != "" ? 1 : 0
   name             = "AllowClientIP"
   server_id        = azurerm_mssql_server.main.id
   start_ip_address = var.client_ip_address

@@ -52,6 +52,7 @@ stages:
               terraform plan \
                 -var-file="dev.tfvars" \
                 -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_DEV)" \
+                -var="alert_email=$(ALERT_EMAIL)" \
                 -out=tfplan
 - stage: DesplegarDev
   displayName: 'Desplegar a dev'
@@ -88,7 +89,8 @@ stages:
                     terraform init -backend-config="key=finbank-dev.tfstate"
                     terraform apply -auto-approve \
                       -var-file="dev.tfvars" \
-                      -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_DEV)"
+                      -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_DEV)" \
+                      -var="alert_email=$(ALERT_EMAIL)"
 - stage: DesplegarPdn
   displayName: 'Desplegar a pdn con aprobacion'
   dependsOn: DesplegarDev
@@ -124,7 +126,8 @@ stages:
                     terraform init -backend-config="key=finbank-pdn.tfstate"
                     terraform apply -auto-approve \
                       -var-file="pdn.tfvars" \
-                      -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_PDN)"
+                      -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_PDN)" \
+                      -var="alert_email=$(ALERT_EMAIL)"
               - task: AzureCLI@2
                 displayName: 'Desplegar pipelines de ADF en pdn'
                 inputs:
