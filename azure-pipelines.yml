@@ -28,9 +28,12 @@ stages:
     - job: PlanDev
       displayName: 'terraform plan -var-file=dev.tfvars'
       steps:
-        - task: TerraformInstaller@1
-          inputs:
-            terraformVersion: $(terraformVersion)
+        - script: |
+            curl -sL https://releases.hashicorp.com/terraform/$(terraformVersion)/terraform_$(terraformVersion)_linux_amd64.zip -o terraform.zip
+            unzip -o terraform.zip
+            sudo mv terraform /usr/local/bin/
+            terraform version
+          displayName: 'Instalar Terraform (sin extension de Marketplace)'
 
         - task: AzureCLI@2
           displayName: 'terraform init + plan (via Azure CLI session)'
@@ -47,7 +50,6 @@ stages:
                 -var-file="dev.tfvars" \
                 -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_DEV)" \
                 -out=tfplan
-
 - stage: DesplegarDev
   displayName: 'Desplegar a DEV'
   dependsOn: Validar
@@ -60,9 +62,12 @@ stages:
         runOnce:
           deploy:
             steps:
-              - task: TerraformInstaller@1
-                inputs:
-                  terraformVersion: $(terraformVersion)
+              - script: |
+                  curl -sL https://releases.hashicorp.com/terraform/$(terraformVersion)/terraform_$(terraformVersion)_linux_amd64.zip -o terraform.zip
+                  unzip -o terraform.zip
+                  sudo mv terraform /usr/local/bin/
+                  terraform version
+                displayName: 'Instalar Terraform (sin extension de Marketplace)'
 
               - task: AzureCLI@2
                 displayName: 'terraform init + apply (dev)'
@@ -91,9 +96,12 @@ stages:
         runOnce:
           deploy:
             steps:
-              - task: TerraformInstaller@1
-                inputs:
-                  terraformVersion: $(terraformVersion)
+              - script: |
+                  curl -sL https://releases.hashicorp.com/terraform/$(terraformVersion)/terraform_$(terraformVersion)_linux_amd64.zip -o terraform.zip
+                  unzip -o terraform.zip
+                  sudo mv terraform /usr/local/bin/
+                  terraform version
+                displayName: 'Instalar Terraform (sin extension de Marketplace)'
 
               - task: AzureCLI@2
                 displayName: 'terraform init + apply (pdn)'
