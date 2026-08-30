@@ -18,12 +18,12 @@ variables:
   - name: workingDirectory
     value: '$(System.DefaultWorkingDirectory)/infra'
   - name: azureServiceConnection
-    value: 'sc-finbank-azure'
+    value: 'sc-finbank-manual'
 
 stages:
 
 - stage: Validar
-  displayName: 'Validar cambios (terraform plan sobre dev)'
+  displayName: 'validar terraform plan sobre dev'
   jobs:
     - job: PlanDev
       displayName: 'terraform plan -var-file=dev.tfvars'
@@ -54,7 +54,7 @@ stages:
                 -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_DEV)" \
                 -out=tfplan
 - stage: DesplegarDev
-  displayName: 'Desplegar a DEV'
+  displayName: 'Desplegar a dev'
   dependsOn: Validar
   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
   jobs:
@@ -90,7 +90,7 @@ stages:
                       -var-file="dev.tfvars" \
                       -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_DEV)"
 - stage: DesplegarPdn
-  displayName: 'Desplegar a PDN (requiere aprobacion)'
+  displayName: 'Desplegar a pdn con aprobacion'
   dependsOn: DesplegarDev
   condition: succeeded()
   jobs:
