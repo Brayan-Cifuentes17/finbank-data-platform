@@ -24,6 +24,24 @@ resource "azurerm_role_assignment" "adf_storage_contributor" {
   principal_id          = azurerm_data_factory.main.identity[0].principal_id
 }
 
+resource "azurerm_databricks_access_connector" "unity_catalog" {
+  name                = "dbac-${local.name_prefix}"
+  resource_group_name = azurerm_resource_group.main.name
+  location             = azurerm_resource_group.main.location
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  tags = var.tags
+}
+
+resource "azurerm_role_assignment" "unity_catalog_storage_access" {
+  scope                = azurerm_storage_account.datalake.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id          = azurerm_databricks_access_connector.unity_catalog.identity[0].principal_id
+}
+
 resource "azurerm_data_factory_trigger_schedule" "diario" {
   name            = "trg-${local.name_prefix}"
   data_factory_id = azurerm_data_factory.main.id
@@ -90,6 +108,45 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "adf_activity_failed" 
 
   auto_mitigation_enabled = false
   description               = "se ejecuta cuando una actividad de ADF falla."
+  tags                       = var.tags
+
+  depends_on = [azurerm_monitor_diagnostic_setting.adf_diagnostics]
+}
+
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "reporte_diario" {
+  name                = "alert-${local.name_prefix}-reporte-diario"
+  resource_group_name = azurerm_resource_group.main.name
+  location             = azurerm_resource_group.main.location
+  evaluation_frequency  = "PT15M"
+  window_duration       = "PT30M"
+  scopes                = [azurerm_log_analytics_workspace.main.id]
+  severity              = 3
+
+  criteria {
+    query = <<-QUERY
+      ADFPipelineRun
+      | where PipelineName == "pl_finbank_master"
+      | where Status == "Succeeded"
+      | extend DuracionMinutos = datetime_diff('minute', End, Start)
+      | project
+          Pipeline = PipelineName,
+          Inicio = Start,
+          Fin = End,
+          Duracion_Minutos = DuracionMinutos,
+          Estado = Status
+      | order by Fin desc
+    QUERY
+    time_aggregation_method = "Count"
+    threshold                = 0
+    operator                 = "GreaterThan"
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.pipeline_alerts.id]
+  }
+
+  auto_mitigation_enabled = false
+  description               = "Resumen diario: confirma la finalizacion exitosa del pipeline maestro con su duracion real."
   tags                       = var.tags
 
   depends_on = [azurerm_monitor_diagnostic_setting.adf_diagnostics]
