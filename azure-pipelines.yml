@@ -44,7 +44,10 @@ stages:
             addSpnToEnvironment: true
             inlineScript: |
               cd $(workingDirectory)
-              export ARM_USE_CLI=true
+              export ARM_CLIENT_ID=$servicePrincipalId
+              export ARM_CLIENT_SECRET=$servicePrincipalKey
+              export ARM_TENANT_ID=$tenantId
+              export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
               terraform init -backend-config="key=finbank-dev.tfstate"
               terraform plan \
                 -var-file="dev.tfvars" \
@@ -78,12 +81,14 @@ stages:
                   addSpnToEnvironment: true
                   inlineScript: |
                     cd $(workingDirectory)
-                    export ARM_USE_CLI=true
+                    export ARM_CLIENT_ID=$servicePrincipalId
+                    export ARM_CLIENT_SECRET=$servicePrincipalKey
+                    export ARM_TENANT_ID=$tenantId
+                    export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
                     terraform init -backend-config="key=finbank-dev.tfstate"
                     terraform apply -auto-approve \
                       -var-file="dev.tfvars" \
                       -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_DEV)"
-
 - stage: DesplegarPdn
   displayName: 'Desplegar a PDN (requiere aprobacion)'
   dependsOn: DesplegarDev
@@ -112,7 +117,10 @@ stages:
                   addSpnToEnvironment: true
                   inlineScript: |
                     cd $(workingDirectory)
-                    export ARM_USE_CLI=true
+                    export ARM_CLIENT_ID=$servicePrincipalId
+                    export ARM_CLIENT_SECRET=$servicePrincipalKey
+                    export ARM_TENANT_ID=$tenantId
+                    export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
                     terraform init -backend-config="key=finbank-pdn.tfstate"
                     terraform apply -auto-approve \
                       -var-file="pdn.tfvars" \
