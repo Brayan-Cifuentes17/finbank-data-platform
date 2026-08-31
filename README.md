@@ -103,48 +103,185 @@ El modelo relacional de origen sigue un esquema de banca simplificado: TB_CLIENT
 ## 5. Cómo Desplegar
  
 ### 5.1 Prerrequisitos
- 
-- Cuenta de Azure con una suscripción activa
-- Azure CLI instalado y autenticado 
-- Terraform 
-- Cuenta de Databricks (se aprovisiona vía Terraform, pero requiere configuración manual adicional para Unity Catalog — ver sección 9)
-### 5.2 Pasos de despliegue
- 
+
+- Cuenta de Azure con una suscripción activa (Free Trial es suficiente; ver notas sobre restricciones de región en 5.13)
+- [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) instalado y autenticado (`az login`)
+- [Terraform](https://developer.hashicorp.com/terraform/install) 
+- [Databricks CLI](https://docs.databricks.com/dev-tools/cli/install.html) instalado y configurado
+- Python con las siguientes librerías: `pip install pyodbc pandas pyyaml faker` (usadas en `data-generation/`)
+- [ODBC Driver 18 for SQL Server](https://learn.microsoft.com/sql/connect/odbc/download-odbc-driver-for-sql-server) instalado en tu máquina (requerido por `pyodbc`)
+- Cuenta de Databricks (se aprovisiona vía Terraform como parte del `apply`, pero requiere configuración manual adicional para Unity Catalog — ver sección 5.3, 5.5, y sección 9)
+
+### 5.2 Bootstrap del backend remoto de Terraform (una sola vez, antes de todo)
+
+Terraform necesita un lugar donde guardar su archivo de estado — este backend se crea **manualmente, una sola vez**, con Azure CLI:
+
+```powershell
+az group create --name rg-tfstate-finbank --location eastus
+
+az storage account create \
+  --name sttfstatefbcq2026 \ #este nombre debe ser unico a nivel global
+  --resource-group rg-tfstate-finbank \
+  --sku Standard_LRS \
+  --location eastus
+
+az storage container create \
+  --name tfstate \
+  --account-name sttfstatefbcq2026 #este nombre debe ser unico a nivel global 
+```
+
+
+
+### 5.3 Pasos de despliegue — infraestructura base
+
 ```powershell
 # 1. Clonar el repositorio
 git clone https://github.com/Brayan-Cifuentes17/finbank-data-platform.git
 cd finbank-data-platform/infra
- 
+
 # 2. Configurar variables sensibles (nunca se versionan)
 cp secrets.tfvars.example secrets.tfvars
-# Editar secrets.tfvars con tu contraseña de SQL admin
- 
-# 3. Inicializar Terraform (usa backend remoto en Azure Storage)
+```
+
+Edita `secrets.tfvars` con estos 3 valores:
+```hcl
+sql_admin_password = "contraseñadeladmin123."   # contraseña del admin de Azure SQL
+alert_email        = "tu-correo@ejemplo.com"     # destino de las alertas del pipeline
+client_ip_address  = "TU.IP.PUBLICA.AQUI"        # obtenla con: curl ifconfig.me
+```
+
+```powershell
+# 3. Inicializar Terraform,usa backend remoto en Azure Storage — ver 5.2 para el bootstrap del backend)
 terraform init
- 
+
 # 4. Revisar el plan antes de aplicar
 terraform plan -var-file="dev.tfvars" -var-file="secrets.tfvars"
- 
-# 5. Aplicar (crea ~25 recursos en Azure)
+
+# 5. Aplicar (crea ~25 recursos en Azure — toma varios minutos, incluye SQL Server y Databricks Workspace)
 terraform apply -var-file="dev.tfvars" -var-file="secrets.tfvars"
 ```
- 
+
 ![Recursos desplegados en Azure tras terraform apply](docs/evidencias/01_recursos_apply.png)
+
+### 5.4 Generación y carga de datos sintéticos
+
+```powershell
+cd ../data-generation
+
+# 1. Crear el archivo de conexión a SQL
+```
+Crea `data-generation/db_config.yaml` con este contenido:
+```yaml
+server: sql-finbank-dev-v1.database.windows.net   # usa el sql_server_fqdn del output de Terraform
+database: sqldb-finbank-source
+user: finbankadmin
+password: "la-misma-password-de-secrets.tfvars"
+```
+```powershell
+# 2. Generar los datos sintéticos (crea archivos CSV/JSON en data-generation/output/)
+python generate_clientes.py
+python generate_productos.py
+python generate_sucursales.py
+python generate_obligaciones.py
+python generate_movimientos.py
+python generate_comisiones.py
+
+# 3. Cargar los datos generados a Azure SQL Database
+python load_data_to_sql.py
+```
+Al finalizar, `load_data_to_sql.py` imprime automáticamente el `SELECT COUNT(*)` de cada tabla como confirmación.
+
+### 5.5 Configuración de Databricks
+
+**Paso 1 — Autenticar el Databricks CLI (una sola vez, desde tu terminal local):**
+
+Primero necesitas un token de acceso personal:
+1. Abre tu Workspace de Databricks en el navegador (URL disponible en el output `databricks_workspace_url` de Terraform, algo como `https://adb-XXXXXXXXXXXXXXXX.XX.azuredatabricks.net`).
+2. Arriba a la derecha → tu ícono de usuario → **User Settings** → pestaña **Developer** → **Access tokens** → **Generate new token** → copia el token (solo se muestra una vez).
+
+Ahora, en tu terminal local (PowerShell):
+```powershell
+databricks configure --token
+```
+Te va a pedir 2 cosas:
+- **Databricks Host**: pega la URL completa del workspace (ej. `https://adb-XXXXXXXXXXXXXXXX.XX.azuredatabricks.net`)
+- **Token**: pega el token que generaste arriba
+
+**Paso 2 — Obtener el Resource ID completo del Key Vault:**
+
+El comando de la Celda 3 necesita el **Resource ID completo** de Azure (una ruta larga tipo `/subscriptions/.../vaults/...`), no solo el nombre. Obtenlo con:
+```powershell
+az keyvault show --name kv-finbank-dev-fbcq2026 --query id -o tsv
+```
+Copia el resultado — lo vas a usar en el siguiente paso.
+
+**Paso 3 — Crear el Secret Scope (desde tu terminal local, con el CLI ya autenticado):**
+```powershell
+databricks secrets create-scope kv-finbank `
+  --scope-backend-type AZURE_KEYVAULT `
+  --resource-id "<pega aquí el Resource ID que obtuviste en el Paso 2>" `
+  --dns-name "<pega aquí el valor de key_vault_uri del output de Terraform, ej. https://kv-finbank-dev-fbcq2026.vault.azure.net/>"
+```
+verifica que funcionó con:
+```powershell
+databricks secrets list-scopes
+```
+Deberías ver `kv-finbank` en la lista.
+
+**Paso 4 — Crear un clúster de cómputo (si no existe todavía):**
+
+En el portal de Databricks → **Compute** → **Create Compute**:
+- Nombre: `cluster-finbank-dev`
+- Databricks Runtime: cualquier versión LTS reciente (13.3 LTS o superior)
+- Tamaño de nodo: el más pequeño disponible es suficiente para este volumen de datos
+- Terminación automática: 20 min para controlar costos
+
+**Paso 5 — Subir los notebooks:**
+
+En el portal de Databricks → panel izquierdo → **Workspace** → tu usuario → clic derecho → **Import** → arrastra los 9 archivos de la carpeta `/pipelines` de tu repositorio (o impórtalos uno por uno).
+
+**Paso 6 — Inicializar las tablas de control (una sola vez, en este orden):**
+
+Abre cada notebook, conéctalo al clúster creado en el Paso 4 (menú desplegable arriba del notebook), y dale **Run All**:
+1. `nb_setup_control_tables.py`
+2. `nb_setup_log_errores_pipeline.py`
+
+### 5.6 Configuración de Azure Data Factory
+
+1. En ADF Studio, crea los Linked Services:
+   - `ls_databricks_finbank` (tipo Azure Databricks, apuntando al Workspace creado por Terraform, autenticación por token de Databricks)
+   - `ls_sql_finbank` (tipo Azure SQL Database, usando el secreto `sql-connection-string` de Key Vault)
+   - `ls_keyvault_finbank` (tipo Azure Key Vault)
+2. Crea los Datasets `ds_sql_sorce` (sobre el Linked Service SQL) y `ds_adls_bronze` (sobre el Data Lake, parametrizado por tabla/año/mes/día).
+3. Importa los 2 pipelines desde `/orchestration/*.json` (ADF Studio → Author → botón `{ }` de cada pipeline nuevo → pega el JSON).
+4. Publica los cambios (botón "Publish all").
+
+### 5.7 Configuración de Unity Catalog (gobierno de datos)
+
+1. **Storage Credential**: Catalog Explorer → Create Credential → Azure Managed Identity → pega el Resource ID del Access Connector (`dbac-finbank-dev`, visible en el portal de Azure tras el `apply`).
+2. **3 External Locations**, cada una apuntando a un contenedor y usando el Storage Credential del paso anterior:
+   - `loc_bronze` → `abfss://bronze@<storage_account_name>.dfs.core.windows.net/`
+   - `loc_silver` → `abfss://silver@<storage_account_name>.dfs.core.windows.net/`
+   - `loc_gold` → `abfss://gold@<storage_account_name>.dfs.core.windows.net/`
+3. **2 grupos** (Account Console → Identity and access → Groups): `rol_ingeniero`, `rol_analista`.
+4. **Permisos** (Catalog Explorer → cada External Location → Permissions → Grant):
+   - `rol_ingeniero`: `READ FILES` + `WRITE FILES` en las 3 ubicaciones
+   - `rol_analista`: `READ FILES` únicamente en `loc_gold`
+5. Agrega usuarios reales a cada grupo para poder demostrar el acceso denegado/permitido (ver sección 9.2).
+
+### 5.8 Primera ejecución del pipeline
+
+En ADF Studio, abre `pl_finbank_master` → **Debug** (parámetros: `filtro_tabla=""`, `run_full_load=false`). Esta primera corrida realiza el Full Load inicial de las 6 tablas. Verifica en el Storage Browser (portal de Azure) que las carpetas `bronze/`, `silver/` y `gold/` se hayan poblado correctamente.
+
+### 5.9 Configuración manual adicional (opcional)
+
+- **Trigger diario**: ya se crea vía Terraform (`trg-finbank-dev`), pero queda desactivado por defecto (control de costos). Actívalo cambiando `activated = true` en `main_data_factory.tf` y volviendo a aplicar Terraform.
+- **CI/CD con Azure DevOps**: ver sección 10 para la configuración completa (Service Connection, Environments, Variable Group) — no es necesaria para correr el pipeline localmente, solo para el flujo de promoción `dev` → `pdn`.
+### 5.10 Entornos: dev y pdn
  
-### 5.3 Configuración manual post-Terraform
+El proyecto está parametrizado para dos entornos independientes (`dev.tfvars`, `pdn.tfvars`), cada uno desplegando un Resource Group completo y aislado, además de `dev` (el entorno principal de trabajo), `pdn` fue desplegado completo mediante el pipeline de CI/CD (ver sección 10).
  
-Algunos pasos requieren configuración manual:
- 
-1. **Carga de datos sintéticos** a Azure SQL Database (`data-generation/load_data_to_sql.py`).
-2. **Creación de las tablas de control** en Databricks (`pipelines/nb_setup_control_tables.py`, `nb_setup_log_errores_pipeline.py`), estas se ejecutan una sola vez.
-3. **Secret Scope de Databricks** respaldado por Key Vault
-4. **Linked Services y pipelines de ADF** — se importan desde `/orchestration/*.json` en ADF.
-5. **Unity Catalog**: Access Connector (Terraform) + Storage Credential + External Locations + grupos de permisos (configuración manual en Databricks, ver sección 9).
-### 5.4 Entornos: dev y pdn
- 
-El proyecto está parametrizado para dos entornos independientes (`dev.tfvars`, `pdn.tfvars`), cada uno desplegando un Resource Group completo y aislado, además de `dev` (el entorno principal de trabajo), `pdn` fue desplegado completo mediante el pipeline de CI/CD (ver sección 13).
- 
-### 5.5 Cumplimiento de estándares de IaC 
+### 5.11 Cumplimiento de estándares de IaC 
  
 | Estándar del documento | Cómo |
 |---|---|
@@ -156,12 +293,12 @@ El proyecto está parametrizado para dos entornos independientes (`dev.tfvars`, 
 | Outputs exportan recursos para los scripts del pipeline | consumidos activamente por el pipeline de CI/CD (`data_factory_name` y `resource_group_name` se usan para desplegar los pipelines de ADF en `pdn`, ver sección 10.2) |
 
  
-### 5.6 Evidencia de despliegue exitoso
+### 5.12 Evidencia de despliegue exitoso
  
  
 ![Recursos desplegados, vista del portal de Azure](docs/evidencias/04_recursos_azure.png)
  
-### 5.7 Inventario de recursos
+### 5.13 Inventario de recursos
  
 | Recurso | Nombre | Región | Propósito |
 |---|---|---|---|
@@ -178,9 +315,6 @@ El proyecto está parametrizado para dos entornos independientes (`dev.tfvars`, 
 | Log Analytics Workspace | `log-finbank-dev` | East US | Destino de los logs de diagnóstico de ADF |
  
 Nota sobre la región de SQL: la ubicación general del proyecto es `East US`, pero el SQL Server se desplegó en `Central US` porque la suscripción Free Trial utilizada tiene aprovisionamiento de Azure SQL restringido en East US y East US 2. 
- 
-**Backend de Terraform :** `rg-tfstate-finbank` / `sttfstatefbcq2026` / contenedor `tfstate` fue creado una sola vez con Azure CLI antes de la primera ejecución de Terraform.
- 
  
 ## 6. Pipeline Bronze → Silver → Gold
  
