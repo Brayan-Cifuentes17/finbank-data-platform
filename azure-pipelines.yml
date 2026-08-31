@@ -153,7 +153,7 @@ stages:
                     for archivo in $(System.DefaultWorkingDirectory)/orchestration/*.json; do
                       nombre_pipeline=$(basename "$archivo" .json)
                       echo "Desplegando pipeline: $nombre_pipeline"
-                      az datafactory pipeline create-or-update \
+                      az datafactory pipeline create \
                         --factory-name "$ADF_NAME_PDN" \
                         --resource-group "$RG_PDN" \
                         --name "$nombre_pipeline" \
