@@ -133,11 +133,12 @@ stages:
               - task: AzureCLI@2
                 displayName: 'Desplegar pipelines de ADF en pdn'
                 inputs:
-                  azureSubscription: $(azureServiceConnection)
+                  azureSubscription: $(azureServiceConnection)tri
                   scriptType: bash
                   scriptLocation: inlineScript
                   addSpnToEnvironment: true
                   inlineScript: |
+                    az extension add --name datafactory --only-show-errors
                     cd $(workingDirectory)
                     export ARM_CLIENT_ID=$servicePrincipalId
                     export ARM_CLIENT_SECRET=$servicePrincipalKey
