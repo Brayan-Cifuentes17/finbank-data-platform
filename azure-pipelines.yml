@@ -133,7 +133,7 @@ stages:
               - task: AzureCLI@2
                 displayName: 'Desplegar pipelines de ADF en pdn'
                 inputs:
-                  azureSubscription: $(azureServiceConnection)tri
+                  azureSubscription: $(azureServiceConnection)
                   scriptType: bash
                   scriptLocation: inlineScript
                   addSpnToEnvironment: true
