@@ -330,6 +330,10 @@ Nota sobre la región de SQL: la ubicación general del proyecto es `East US`, p
  
 **Manejo de errores por tabla:** dentro del `ForEach`, cada tabla tiene una rama de captura de error que registra el fallo en `log_errores_pipeline` sin detener el procesamiento de las demás tablas.
  
+![Diseño del pipeline pl_ppal_data_ingest: ForEach con manejo de errores por tabla](docs/evidencias/ppal_ingest_diseño.png)
+
+![pipeline ](docs/evidencias/ppal_ingest2.png) 
+
 **Mejora propia — parámetros `filtro_tabla` y `run_full_load`:** agregados por valor operativo real. `pl_ppal_data_ingest` y `pl_finbank_master` aceptan un parámetro `filtro_tabla` que, si se especifica el nombre de la tabla, reprocesa unicamente esa tabla en las 3 capas (Bronze → Silver → Gold), en vez de las 6. `run_full_load` fuerza una carga completa incluso en tablas configuradas como incrementales.
 
  
