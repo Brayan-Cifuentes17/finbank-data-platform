@@ -113,6 +113,7 @@ stages:
 
               - task: AzureCLI@2
                 displayName: 'terraform init + apply (pdn)'
+                continueOnError: true
                 inputs:
                   azureSubscription: $(azureServiceConnection)
                   scriptType: bash
@@ -135,9 +136,18 @@ stages:
                   azureSubscription: $(azureServiceConnection)
                   scriptType: bash
                   scriptLocation: inlineScript
+                  addSpnToEnvironment: true
                   inlineScript: |
-                    ADF_NAME_PDN=$(terraform -chdir=$(workingDirectory) output -raw data_factory_name)
-                    RG_PDN=$(terraform -chdir=$(workingDirectory) output -raw resource_group_name)
+                    cd $(workingDirectory)
+                    export ARM_CLIENT_ID=$servicePrincipalId
+                    export ARM_CLIENT_SECRET=$servicePrincipalKey
+                    export ARM_TENANT_ID=$tenantId
+                    export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+                    terraform init -backend-config="key=finbank-pdn.tfstate"
+
+                    ADF_NAME_PDN=$(terraform output -raw data_factory_name)
+                    RG_PDN=$(terraform output -raw resource_group_name)
+                    echo "Data Factory destino: $ADF_NAME_PDN en $RG_PDN"
 
                     for archivo in $(System.DefaultWorkingDirectory)/orchestration/*.json; do
                       nombre_pipeline=$(basename "$archivo" .json)
@@ -161,6 +171,7 @@ stages:
                     export ARM_CLIENT_SECRET=$servicePrincipalKey
                     export ARM_TENANT_ID=$tenantId
                     export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+                    terraform init -backend-config="key=finbank-pdn.tfstate"
                     terraform apply -auto-approve \
                       -var-file="pdn.tfvars" \
                       -var="sql_admin_password=$(SQL_ADMIN_PASSWORD_PDN)" \
