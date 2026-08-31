@@ -355,13 +355,16 @@ Nota sobre la región de SQL: la ubicación general del proyecto es `East US`, p
 ![Salida de nb_bronze_to_silver: las 6 tablas con reporte de calidad](docs/evidencias/silver_output2.png)
  
 ### 6.3 Gold — Modelo analítico
- 
-![Salida de nb_silver_to_gold: dimensiones, hechos y agregaciones](docs/evidencias/gold_output.png)
-![Salida de nb_silver_to_gold: dimensiones, hechos y agregaciones](docs/evidencias/gold_output1.png)
+ ![Storage Browser: contenedor gold con las 12 tablas](docs/evidencias/gold_storage_browser.png)
+![Particionamiento físico real de fact_transacciones por periodo_particion](docs/evidencias/gold_particionamiento_real.png)
+
  
 **Qué hace:** construye 4 dimensiones (clientes, productos, geografía, canal), 3 hechos (transacciones, cartera, rentabilidad del cliente), 3 tablas de agregación, la tabla `cltv_12m`, y la tabla de KPIs ejecutivos (`kpis_cartera_diarios`).
- 
+
  ![Salida de nb_silver_to_gold: dimensiones, hechos y agregaciones](docs/evidencias/gold_output2.png)
+![Salida de nb_silver_to_gold: dimensiones, hechos y agregaciones](docs/evidencias/gold_output.png)
+![Salida de nb_silver_to_gold: dimensiones, hechos y agregaciones](docs/evidencias/gold_output1.png)
+
 **Decisión — `overwrite` completo en cada corrida, no incremental:** a diferencia de Silver, Gold se reconstruye por completo desde Silver en cada ejecución. Esto garantiza que todas las tablas de Gold (especialmente las agregaciones, que combinan varias fuentes) queden consistentes entre sí en el mismo instante 
  
 **Decisión — particionamiento selectivo, no uniforme:** se aplicó partición física por columna en las tablas grandes con una dimensión de análisis clara (`fact_transacciones` por mes, `fact_cartera` por `bucket_mora`, `fact_rentabilidad_cliente` por período, `dim_clientes` por segmento). En las tablas pequeñas pero muy consultadas (`kpis_cartera_diarios`, `agg_vista_comercial_cliente`) se usó `OPTIMIZE ZORDER` en vez de partición física 
