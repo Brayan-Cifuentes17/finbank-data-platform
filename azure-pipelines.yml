@@ -150,8 +150,8 @@ stages:
                     RG_PDN=$(terraform output -raw resource_group_name)
                     echo "Data Factory destino: $ADF_NAME_PDN en $RG_PDN"
 
-                    for archivo in $(System.DefaultWorkingDirectory)/orchestration/*.json; do
-                      nombre_pipeline=$(basename "$archivo" .json)
+                    for nombre_pipeline in pl_ppal_data_ingest pl_finbank_master; do
+                      archivo="$(System.DefaultWorkingDirectory)/orchestration/${nombre_pipeline}.json"
                       echo "Desplegando pipeline: $nombre_pipeline"
                       az datafactory pipeline create \
                         --factory-name "$ADF_NAME_PDN" \
