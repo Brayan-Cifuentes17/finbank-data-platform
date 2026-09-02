@@ -27,11 +27,12 @@ N_COMISIONES_NUEVAS = 15
 
 
 def generar_id_mov(n):
-    return f"MOV-INC-{n:04d}"
-
+    sufijo_unico = datetime.now().strftime("%H%M%S")
+    return f"MOV-INC-{sufijo_unico}-{n:03d}"
 
 def generar_id_comision(n):
-    return f"COM-INC-{n:04d}"
+    sufijo_unico = datetime.now().strftime("%H%M%S")
+    return f"COM-INC-{sufijo_unico}-{n:03d}"
 
 
 def insertar_movimientos(cursor):
@@ -103,11 +104,7 @@ def main():
     insertar_comisiones(cursor)
 
     conn.commit()
-    print("\nCommit exitoso. Datos nuevos disponibles en el origen.")
-    print(f"Ahora corre pl_finbank_master -- Bronze deberia capturar SOLO estas "
-          f"{N_MOVIMIENTOS_NUEVOS + N_COMISIONES_NUEVAS} filas nuevas (mas lo que "
-          f"ya estaba pendiente por el checkpoint), demostrando carga Delta real.")
-
+    print("\nDatos nuevos disponibles en el origen.")
     cursor.close()
     conn.close()
 
